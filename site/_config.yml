@@ -1,0 +1,35 @@
+title: FlickBolt
+description: On-demand video capture of physical locations. Request a video, get one filmed by a real human nearby.
+url: "https://flickbolt.com"
+baseurl: ""
+
+permalink: /:slug/
+
+# API endpoint used by all client JS. Override per environment.
+api_base: "https://api.flickbolt.com"
+
+# Build settings
+markdown: kramdown
+kramdown:
+  input: GFM
+highlighter: rouge
+
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+# Allow all hosts for the Replit dev preview proxy.
+# Jekyll's WEBrick host is set via CLI; this just keeps build clean.
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
+  - node_modules
+  - README.md
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

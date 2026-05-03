@@ -1,0 +1,22 @@
+# Ruby / Jekyll
+site/_site/
+_site/
+site/.jekyll-cache/
+.jekyll-cache/
+site/.sass-cache/
+site/vendor/
+site/.bundle/
+.bundle/
+
+# Node / Workers
+node_modules/
+workers/**/node_modules/
+workers/**/.wrangler/
+workers/**/dist/
+workers/**/.dev.vars
+
+# OS / editors
+.DS_Store
+*.log
+.env
+.env.local

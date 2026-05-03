@@ -1,0 +1,24 @@
+{
+  "name": "@flickbolt/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "migrate:local": "wrangler d1 migrations apply flickbolt_db --local",
+    "migrate:remote": "wrangler d1 migrations apply flickbolt_db --remote",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "bcryptjs": "^2.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "@types/bcryptjs": "^2.4.6",
+    "typescript": "^5.5.4",
+    "wrangler": "^3.78.0"
+  }
+}

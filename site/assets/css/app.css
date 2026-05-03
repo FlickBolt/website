@@ -1,0 +1,51 @@
+/* Minimal global styles. Tailwind utility classes (via CDN) handle the rest.
+   We can't use @apply here because CDN Tailwind doesn't preprocess this file —
+   so component classes are written as raw CSS. */
+:root { color-scheme: dark; }
+html, body { background: #09090b; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color .15s, border-color .15s, color .15s;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.btn-primary { background: #fbbf24; color: #09090b; }
+.btn-primary:hover { background: #fcd34d; }
+.btn-ghost { border-color: #27272a; color: #f4f4f5; background: transparent; }
+.btn-ghost:hover { border-color: #3f3f46; }
+
+.input {
+  display: block;
+  width: 100%;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: #f4f4f5;
+}
+.input::placeholder { color: #71717a; }
+.input:focus { outline: none; border-color: #fbbf24; }
+
+.label {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a1a1aa;
+  margin-bottom: 0.25rem;
+}
+
+.card {
+  background: rgba(24, 24, 27, 0.6);
+  border: 1px solid #27272a;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+}

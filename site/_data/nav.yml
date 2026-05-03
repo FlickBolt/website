@@ -1,0 +1,33 @@
+primary:
+  - title: Request a video
+    url: /request/
+  - title: Capture
+    url: /capture/
+  - title: Live
+    url: /live/
+  - title: Pricing
+    url: /#pricing
+auth_out:
+  - title: Log in
+    url: /login/
+    style: ghost
+  - title: Sign up
+    url: /signup/
+    style: solid
+auth_in:
+  - title: Dashboard
+    url: /dashboard/customer/
+    style: ghost
+  - title: Log out
+    url: "#"
+    id: nav-logout
+    style: solid
+footer:
+  - title: Terms
+    url: /legal/terms/
+  - title: Privacy
+    url: /legal/privacy/
+  - title: Capturer agreement
+    url: /legal/capturer-agreement/
+  - title: Filming rules
+    url: /legal/filming-rules/

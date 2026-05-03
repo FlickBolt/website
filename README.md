@@ -1,126 +1,80 @@
-## Header
+# FlickBolt
 
-Header folder consists of 8 variations of Page Header with Titles
+On-demand video capture of physical locations. A two-sided marketplace where
+**Customers** request video of a place and **Capturers** (mobile creators)
+fulfill those requests, plus a Twitch-style **Live** mode where capturers
+broadcast publicly and viewers tip / subscribe.
 
-### bg_color: 
-this variable when defined on page will change the color of header (page title bckground)
-it can take values as follows 
-    bg-default
-    bg-dark
-    bg-gray
-    bg-white
-    bg-red
-	bg-orange
-	bg-yellow
-	bg-green
-	bg-leaf
-	bg-teal
-	bg-aqua
-	bg-meander
-	bg-blue
-	bg-cobalt
-	bg-sky
-	bg-purple
-	bg-violet
-	bg-pink
-	bg-rose
-	bg-hibiscus
-	bg-brown
+## Stack
 
-## Nav
+| Layer       | Tech                                                                        |
+| ----------- | --------------------------------------------------------------------------- |
+| Frontend    | Jekyll → GitHub Pages (`site/`)                                             |
+| API         | Cloudflare Workers (Hono router) (`workers/api/`)                           |
+| Database    | Cloudflare D1 (SQLite)                                                      |
+| Storage     | Cloudflare R2                                                               |
+| Video       | Cloudflare Stream (live + VOD)                                              |
+| Sessions    | Cloudflare KV                                                               |
+| Real-time   | Durable Objects (`workers/matching-do/`, `workers/live-channel-do/`)        |
+| Background  | Cloudflare Queues                                                           |
+| Payments    | Stripe Connect (Express)                                                    |
 
-Nav folder consists of 11 variations of Navigation 
- by default the logo is set to white for classic 
- you can set black logo by following 
+GitHub Pages serves zero dynamic content. Every dynamic interaction is
+`fetch()` from the static page to a Worker endpoint that returns JSON.
 
- 	{% include navigation.html default_logo="black" logo_class="custom-logo-class" %}
+## Repository layout
 
-for nav-10 
-	{% include nav-10.html shop_header=true %}
+```
+flickbolt/
+├── site/                  # Jekyll site → GitHub Pages
+├── workers/
+│   ├── api/               # main API worker (Hono)
+│   ├── matching-do/       # Durable Object for matching (Phase 6)
+│   ├── live-channel-do/   # Durable Object for live chat (Phase 9)
+│   ├── shared/            # cross-worker helpers
+│   └── migrations/        # D1 SQL migrations
+└── .github/workflows/     # CI: jekyll.yml + workers-deploy.yml
+```
 
-This would include the shop-header.html partial. Similarly, you can add other combinations:
+## Local development
 
-	{% include nav-10.html btn_header=true %}
-	{% include nav-10.html drop_search=true %}
-    <div class="navbar-brand">
-      <a href="{{site.url}}">
-        <!-- White Logo -->
-        <img 
-          src="{{site.data.general_settings.light_logo_1x}}" 
-          srcset="{{site.data.general_settings.light_logo_1x}} 1x, {{site.data.general_settings.light_logo_2x}} 2x"
-          class="{% if include.logo_class %}{{ include.logo_class }}{% else %}logo-light{% endif %} 
-                 {% unless include.default_logo == 'black' %}{% else %}d-none{% endunless %}" 
-          alt="{{site.data.general_settings.title}}" />
-        
-        <!-- Black Logo -->
-        <img 
-          src="{{site.data.general_settings.black_logo_1x}}" 
-          srcset="{{site.data.general_settings.black_logo_1x}} 1x, {{site.data.general_settings.black_logo_2x}} 2x"
-          class="{% if include.logo_class %}{{ include.logo_class }}{% else %}logo-dark{% endif %} 
-                 {% if include.default_logo == 'black' %}{% else %}d-none{% endif %}" 
-          alt="{{site.data.general_settings.title}}" />
-      </a>
-    </div>
+### Site (Jekyll)
+```bash
+cd site
+bundle install
+bundle exec jekyll serve --host 0.0.0.0 --port 5000 --livereload
+```
 
-Best Practice
+### API (Workers)
+```bash
+cd workers/api
+npm install
+echo 'JWT_SECRET="dev-secret-change-me"' > .dev.vars
+npx wrangler d1 migrations apply flickbolt_db --local
+npx wrangler dev
+```
 
-    Use meaningful names for the class, such as center-logo, logo-with-padding, or logo-hover-effect, based on the styling applied.
-    Combine multiple styles in your custom-logo-class if needed, but keep the class name descriptive.
+## Phase status (this commit)
 
+- ✅ **Phase 0** — Empty deployable skeleton.
+- ✅ **Phase 1** — Jekyll routes, layouts, page-scoped JS, mobile nav.
+- ✅ **Phase 2** — Workers API with Hono, D1 schema, health/version, CORS, error handler. Auth scaffolding too (signup/login/refresh/logout/me) so Sprint 2 can begin without rework.
+- ⏳ Phase 3+ — see `attached_assets/Pasted--FlickBolt-Build-Specification-...txt`.
 
-## Footer
+## Things you (the human) still have to do for Sprint 1
 
-Footer folder consists of 8 variations of Footer 
+1. Create a GitHub repo named `flickbolt` and push.
+2. Enable GitHub Pages → source: GitHub Actions.
+3. Buy a domain (`flickbolt.com`) — optional but recommended for cookie-based auth.
+4. In Cloudflare:
+   - Run `wrangler login`
+   - `wrangler d1 create flickbolt_db` → paste `database_id` into `workers/api/wrangler.toml`
+   - `wrangler kv:namespace create flickbolt-sessions` → paste `id` into wrangler.toml
+   - `wrangler r2 bucket create flickbolt-media`
+   - `wrangler secret put JWT_SECRET` (use a long random string)
+5. Add GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+6. Push to `main`. The two workflows deploy independently.
 
-## Blogs
-
-The main blogs directory holds the design to blog pages and there are 8 variations of them
-
-### header_image : 
-this variable can be used to define a page title image. You can insert the path to your image in this variable.
-
-### post_format:  
-its a variable used in blog pages frontmatter to define which post type you wanna use
-
-post_format can take the following values -- general , gallery, carousel , video
-
-## Breadcrumbs
-Usage
------
-
-To render the breadcrumbs for the current page:
-
-    {% include breadcrumbs.html %}
-
-To render the breadcrumbs for another page:
-
-    {% include breadcrumbs.html page=another_page %}
-
-To render breadcrumbs with the home page and date omitted (see [Options](#options) below
-for more options):
-
-    {% include breadcrumbs.html omit_home=true omit_date=true %}
-
-Options
--------
-
-omit_home
-: Don't include the home page as the first breadcrumb.
-
-omit_collection
-: Don't include the page's collection ("posts" by default, for posts) in the breadcrumbs.
-
-omit_categories
-: Don't include the page's categories in the breadcrumbs.
-
-omit_date
-: Don't include the post's date (year, month and day) in the breadcrumbs.
-
-omit_year
-: Don't include the post's year in the breadcrumbs.
-
-omit_month
-: Don't include the post's month in the breadcrumbs.
-
-omit_date
-: Don't include the post's date in the breadcrumbs.
+Acceptance for Sprint 1 (per spec):
+- Visiting `flickbolt.com` shows the FlickBolt landing page. ✅ (locally on Replit)
+- `curl https://api.flickbolt.com/health` returns `{"ok":true}`. ✅ (worker code ready, awaits your CF deploy)

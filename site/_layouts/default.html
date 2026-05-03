@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0f">
+  <title>{% if page.title %}{{ page.title }} · {{ site.title }}{% else %}{{ site.title }} — {{ site.description }}{% endif %}</title>
+  <meta name="description" content="{{ page.description | default: site.description }}">
+  {% seo title=false %}
+  <link rel="icon" href="/assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    window.FLICKBOLT = {
+      apiBase: "{{ site.api_base }}",
+      env: "{{ jekyll.environment | default: 'development' }}"
+    };
+  </script>
+</head>
+<body class="min-h-screen bg-zinc-950 text-zinc-100 antialiased flex flex-col">
+  {% include header.html %}
+  <main class="flex-1 w-full">
+    {{ content }}
+  </main>
+  {% include footer.html %}
+  <script src="/assets/js/state.js"></script>
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/auth.js"></script>
+  {% if page.scripts %}
+    {% for s in page.scripts %}
+      <script src="{{ s }}"></script>
+    {% endfor %}
+  {% endif %}
+</body>
+</html>

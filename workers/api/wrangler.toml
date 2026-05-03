@@ -1,0 +1,51 @@
+name = "flickbolt-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Production route — uncomment after configuring DNS and zone in Cloudflare
+# routes = [
+#   { pattern = "api.flickbolt.com/*", zone_name = "flickbolt.com" }
+# ]
+
+[vars]
+ALLOWED_ORIGINS = "https://flickbolt.com,http://localhost:4000"
+ENVIRONMENT = "production"
+
+# --- Bindings ---
+
+[[d1_databases]]
+binding = "DB"
+database_name = "flickbolt_db"
+database_id = "REPLACE_ME_AFTER_wrangler_d1_create"
+migrations_dir = "../migrations"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_ME_AFTER_wrangler_kv_namespace_create"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "flickbolt-media"
+
+# Durable Objects (Phase 6 + 9). Workers are scaffolded but bindings reference
+# the classes once the matching-do / live-channel-do workers are deployed and
+# exported. See workers/matching-do and workers/live-channel-do.
+# [[durable_objects.bindings]]
+# name = "MATCHING"
+# class_name = "MatchingDO"
+# script_name = "flickbolt-matching-do"
+#
+# [[durable_objects.bindings]]
+# name = "LIVE_CHANNEL"
+# class_name = "LiveChannelDO"
+# script_name = "flickbolt-live-channel-do"
+
+# --- Secrets (set with `wrangler secret put`) ---
+# JWT_SECRET
+# STRIPE_SECRET
+# STRIPE_WEBHOOK_SECRET
+# STREAM_API_TOKEN
+# CF_ACCOUNT_ID
+# RESEND_API_KEY
+# TURNSTILE_SECRET

@@ -1,0 +1,15 @@
+---
+layout: default
+---
+<div class="mx-auto max-w-6xl px-4 py-8 grid md:grid-cols-[220px_1fr] gap-8">
+  <aside class="md:sticky md:top-20 self-start">
+    <nav class="flex md:flex-col gap-1 text-sm">
+      <a class="px-3 py-2 rounded-lg hover:bg-zinc-900" href="/dashboard/customer/">My requests</a>
+      <a class="px-3 py-2 rounded-lg hover:bg-zinc-900" href="/dashboard/capturer/">Capturer</a>
+    </nav>
+  </aside>
+  <section>
+    <h1 class="text-2xl font-semibold mb-6">{{ page.title }}</h1>
+    {{ content }}
+  </section>
+</div>
