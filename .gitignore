@@ -20,3 +20,4 @@ workers/**/.dev.vars
 *.log
 .env
 .env.local
+.github/workflows/
