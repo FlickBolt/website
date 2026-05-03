@@ -1,0 +1,370 @@
+# FlickBolt — Build Specification
+
+**Concept:** On-demand video capture of physical locations. A two-sided marketplace where **Customers** request video of a place and **Capturers** (mobile creators) fulfill those requests, plus a Twitch-style live mode where capturers broadcast publicly and viewers tip/subscribe.
+
+**Stack:**
+- **Frontend:** Jekyll site hosted on GitHub Pages
+- **Backend:** Cloudflare Workers + D1 (SQL) + R2 (storage) + Stream (video) + KV (sessions/cache) + Durable Objects (real-time matching) + Queues (background jobs)
+- **Payments:** Stripe Connect (marketplace payouts)
+- **Dev environment:** Replit (running Wrangler, Jekyll, Git)
+
+---
+
+## Architecture Overview
+
+```
+[Customer Browser] ─┐                          ┌─► [Cloudflare Stream]  (live + VOD)
+                    ├─► [GitHub Pages / Jekyll] ─► [CF Workers API]   ──► [D1] (relational)
+[Capturer Browser] ─┘   (static HTML/JS/CSS)    │                     ──► [R2] (files)
+                                                │                     ──► [KV] (sessions)
+                                                │                     ──► [Durable Objects] (matching, live state)
+                                                │                     ──► [Queues] (payouts, email)
+                                                └─► [Stripe Connect]
+```
+
+**Key principle:** GitHub Pages serves zero dynamic content. Every dynamic interaction is `fetch()` from the static page to a Worker endpoint. All Worker endpoints return JSON. Auth is JWT in `Authorization: Bearer` header, stored in `localStorage` (or `httpOnly` cookie if you set up a worker on a custom subdomain — recommended for production).
+
+---
+
+## Repository Layout
+
+Single monorepo, two top-level folders:
+
+```
+flickbolt/
+├── site/                    # Jekyll site → deployed to GitHub Pages
+│   ├── _config.yml
+│   ├── _layouts/
+│   ├── _includes/
+│   ├── _data/               # static config (e.g., feature flags, copy)
+│   ├── assets/
+│   │   ├── js/              # all client logic
+│   │   └── css/
+│   ├── index.md
+│   ├── request.md           # customer: create a request
+│   ├── capture.md           # capturer: fulfill / go live
+│   ├── live/                # browse live broadcasts
+│   ├── dashboard/
+│   └── ...
+└── workers/                 # Cloudflare Workers monorepo
+    ├── api/                 # main API worker (Hono router)
+    ├── matching-do/         # Durable Object for geo-matching
+    ├── live-channel-do/     # Durable Object for live broadcast state
+    ├── shared/              # shared types, db helpers
+    ├── migrations/          # D1 schema migrations
+    └── wrangler.toml
+```
+
+GitHub Pages deploys from `/site` (configure in repo settings: "GitHub Pages → source → main branch /site folder", or use a Jekyll-build action that publishes to `gh-pages`).
+
+---
+
+## Phase 0 — Foundations
+
+**Goal:** Empty but deployable skeleton. Pushing a change to `site/` updates the live page; pushing to `workers/` redeploys the API.
+
+### Tasks
+1. **Create GitHub repo** `flickbolt`. Default branch `main`.
+2. **Replit workspace.** Import the repo. Install: `ruby` + `bundler` + `jekyll`, `node` 20+, `wrangler` (`npm i -g wrangler`).
+3. **Cloudflare account.** Create:
+   - Workers + Pages plan (free tier is fine to start)
+   - D1 database `flickbolt_db`
+   - R2 bucket `flickbolt-media`
+   - KV namespace `flickbolt-sessions`
+   - Stream — enable
+   - Turnstile site key (for bot protection on signup)
+4. **Stripe account.** Enable Connect (Express accounts).
+5. **GitHub Pages.** Enable, point at `/site`. Add a CNAME if you have a domain.
+6. **Custom domain (recommended).** Buy `flickbolt.com`. Point apex/`www` at GitHub Pages, point `api.flickbolt.com` at the Worker (Cloudflare Workers route or `*.workers.dev`). This avoids 3rd-party-cookie issues for auth.
+7. **GitHub Actions.** Two workflows:
+   - `jekyll.yml`: builds and deploys the Jekyll site on push to `main` (paths: `site/**`).
+   - `workers-deploy.yml`: runs `wrangler deploy` on push to `main` (paths: `workers/**`). Stores `CLOUDFLARE_API_TOKEN` as a repo secret.
+
+**Acceptance:** Visiting `flickbolt.com` shows a "Hello FlickBolt" Jekyll page. `curl https://api.flickbolt.com/health` returns `{"ok":true}`.
+
+---
+
+## Phase 1 — Jekyll Frontend Skeleton
+
+**Goal:** All public pages exist as routes, navigation works, mobile-first layout in place. No real data yet — just static placeholders driven from `_data/`.
+
+### Tasks
+1. **`_config.yml`** with site title, base URL, permalinks: `/:slug/`.
+2. **Tailwind via CDN** for prototyping (`<script src="https://cdn.tailwindcss.com">`); migrate to a built `tailwind.css` later via a GitHub Action if you outgrow CDN.
+3. **Layouts** (`_layouts/`):
+   - `default.html` — header, footer, mobile nav, auth-state-aware top bar (JS swaps logged-in/out menu).
+   - `dashboard.html` — for logged-in pages, with sidebar.
+4. **Pages** (each is a `.md` file with frontmatter):
+   - `/` — landing: hero, "Request a video" CTA, "Become a capturer" CTA, live feed preview.
+   - `/request/` — customer request flow (location → instructions → budget → checkout).
+   - `/capture/` — capturer dispatch screen ("go online", incoming requests, go-live button).
+   - `/live/` — Twitch-style discovery grid of currently-live capturers.
+   - `/live/:handle/` — individual broadcast watch page (built dynamically by JS — Jekyll just provides a generic template).
+   - `/dashboard/customer/` and `/dashboard/capturer/` — order history, earnings, settings.
+   - `/login/`, `/signup/`, `/onboarding/`.
+   - `/legal/terms/`, `/legal/privacy/`, `/legal/capturer-agreement/`, `/legal/filming-rules/`.
+5. **JS bundle structure** (`assets/js/`):
+   - `api.js` — wraps `fetch` with base URL, auth header injection, error handling.
+   - `auth.js` — login/logout/session check.
+   - `state.js` — minimal observable store (don't pull in React; use vanilla JS or Alpine.js via CDN).
+   - `pages/*.js` — one file per page, attached via `<script>` in that page's frontmatter.
+
+**Acceptance:** All routes exist, navigation works on mobile and desktop, no broken links. Lighthouse mobile score ≥ 85.
+
+---
+
+## Phase 2 — Cloudflare Workers Backend Foundation
+
+**Goal:** The API is up with a real database, real routes, real auth scaffolding. No business logic yet.
+
+### Tasks
+1. **Worker scaffolding.** In `workers/api/`:
+   - Use **Hono** as the router (lightweight, Workers-native).
+   - Bindings in `wrangler.toml`: `DB` (D1), `KV` (KV), `MEDIA` (R2), `MATCHING` (Durable Object), `LIVE_CHANNEL` (Durable Object), `STREAM_API_TOKEN` (secret), `STRIPE_SECRET` (secret), `JWT_SECRET` (secret).
+   - CORS middleware: allow `https://flickbolt.com` (and `http://localhost:4000` in dev) with credentials.
+2. **D1 schema** (`workers/migrations/0001_init.sql`). Core tables:
+   - `users` — id, email, password_hash, role (`customer` | `capturer` | `both` | `admin`), display_name, handle, avatar_url, stripe_customer_id, stripe_connect_id, created_at.
+   - `capturer_profiles` — user_id (PK/FK), bio, equipment, service_radius_km, base_lat, base_lng, hourly_rate_cents, kyc_status, is_online (bool), last_seen_at.
+   - `requests` — id, customer_id, lat, lng, address, instructions, max_price_cents, duration_seconds, deadline_at, status (`open` | `assigned` | `in_progress` | `delivered` | `completed` | `cancelled` | `disputed`), assigned_capturer_id, stream_video_id (Cloudflare Stream UID), created_at.
+   - `bids` (if you go auction-style) — id, request_id, capturer_id, price_cents, eta_minutes, created_at.
+   - `videos` — id, request_id (nullable for live-only), capturer_id, stream_uid, duration_s, thumbnail_url, is_live, recorded_at, geo_lat, geo_lng.
+   - `transactions` — id, user_id, type (`charge` | `payout` | `tip` | `refund`), amount_cents, currency, stripe_id, related_request_id, created_at.
+   - `tips` — id, viewer_id, capturer_id, video_id, amount_cents, message, created_at.
+   - `subscriptions` — id, viewer_id, capturer_id, tier, started_at, current_period_end, stripe_subscription_id.
+   - `ratings` — id, request_id, rater_id, rated_id, stars, comment, created_at.
+   - `reports` — id, reporter_id, target_type, target_id, reason, status.
+3. **Migrations runner.** Script in `workers/scripts/migrate.sh` running `wrangler d1 migrations apply flickbolt_db`.
+4. **Health and version endpoints.** `GET /health`, `GET /version`.
+5. **Error handling.** Hono error middleware that returns `{error: {code, message}}` and logs via `console.log` (visible in `wrangler tail`).
+
+**Acceptance:** `wrangler deploy` succeeds. D1 tables exist. CORS preflight from `flickbolt.com` returns 200.
+
+---
+
+## Phase 3 — Authentication & Accounts
+
+**Goal:** Real users can sign up, log in, and stay logged in across page loads.
+
+### Tasks
+1. **Endpoints:**
+   - `POST /auth/signup` — email, password, display_name, role intent. Hash password with `bcrypt` (use the WASM build that runs in Workers, e.g., `bcryptjs`). Issue JWT.
+   - `POST /auth/login` — verify, issue JWT (15-min access) + refresh token (stored in KV, 30 days).
+   - `POST /auth/refresh`.
+   - `POST /auth/logout` — invalidate refresh token in KV.
+   - `GET /me` — returns current user from JWT.
+   - `POST /auth/turnstile-verify` — middleware on signup to block bots.
+2. **JWT.** HS256 signed with `JWT_SECRET`. Claims: `sub`, `role`, `exp`. Use `hono/jwt`.
+3. **Magic-link option (recommended over passwords for MVP).** `POST /auth/magic` issues a one-time token via email; `GET /auth/magic/:token` exchanges for JWT. Email via Resend or Cloudflare Email Workers.
+4. **Frontend auth flow** in `assets/js/auth.js`:
+   - On login, store JWT and refresh token in `localStorage` (or, better, set a cookie on `api.flickbolt.com` if same-eTLD+1 setup is used).
+   - On every API call, attach `Authorization: Bearer <jwt>`. On 401, attempt refresh once.
+   - Auth-aware nav: header reads `auth.currentUser()` and shows the right menu.
+5. **Password reset flow** — same magic-link pattern.
+
+**Acceptance:** A user can sign up on `/signup/`, refresh the page, and still appear logged in. `GET /me` returns their record.
+
+---
+
+## Phase 4 — Capturer Onboarding
+
+**Goal:** A user can become a capturer: profile, KYC, payout account, service area.
+
+### Tasks
+1. **Onboarding wizard** (`/onboarding/capturer/`) — multi-step form, state in `localStorage`:
+   - Step 1: bio, handle, headshot (uploads to R2 via signed PUT URL from worker).
+   - Step 2: service area — pick base location (Leaflet + OpenStreetMap tiles, free), set radius.
+   - Step 3: equipment, languages, specialties (real estate, events, scenic, etc.).
+   - Step 4: Stripe Connect Express onboarding — Worker creates account, returns onboarding link, redirect.
+   - Step 5: ToS + Capturer Agreement acceptance (legal lift — do this properly).
+2. **Endpoints:**
+   - `POST /capturer/profile` — upsert profile.
+   - `POST /capturer/avatar-upload-url` — returns presigned R2 PUT.
+   - `POST /capturer/stripe-onboard` — creates Connect account, returns onboarding URL.
+   - `GET /capturer/stripe-status` — polls Connect account state.
+3. **KYC gate.** A capturer can't accept paid requests until `kyc_status = 'verified'` and Stripe Connect `charges_enabled = true`.
+
+**Acceptance:** A new user finishes onboarding, lands on `/dashboard/capturer/` with status "Verified, ready to go online."
+
+---
+
+## Phase 5 — Customer Request Flow
+
+**Goal:** A customer creates a request, pays (held in escrow), and the request enters the matching pool.
+
+### Tasks
+1. **`/request/` page.** Three-pane wizard:
+   - **Where** — Leaflet map. Drop a pin or address autocomplete (use Nominatim free tier, or Mapbox Geocoding for production). Capture lat/lng + formatted address.
+   - **What** — instructions text, duration (30s / 60s / 3min / custom), required shots checklist, time window (now / within 1hr / scheduled), public-or-private (private = customer-only delivery; public = also published to live/discovery feed for tip eligibility).
+   - **How much** — pricing logic: `base_fee + duration_fee + distance_modifier + urgency_multiplier`. Show estimated price; let customer accept fixed price or set max bid.
+2. **Endpoints:**
+   - `POST /requests/estimate` — returns price quote.
+   - `POST /requests` — creates request in `open` status, creates Stripe PaymentIntent with `manual` capture (authorization hold), returns client secret.
+   - `GET /requests/:id`.
+   - `POST /requests/:id/cancel`.
+3. **Stripe checkout.** Use Stripe.js (CDN) for payment element. Customer authorizes the charge; Worker stores `payment_intent_id` on the request. Money is captured only when delivery is accepted.
+4. **Filming rules acknowledgment.** Before submit, force a checkbox: "I confirm I'm not requesting filming of private property without permission, identifiable people without basis, or any illegal activity." Log the acknowledgment.
+
+**Acceptance:** Customer submits a request, sees it in "Pending match" state on their dashboard, Stripe shows an authorization hold.
+
+---
+
+## Phase 6 — Real-Time Matching (Durable Object)
+
+**Goal:** When a request enters the pool, nearby online capturers are notified within seconds. They can accept; first accept wins (or auction times out).
+
+### Tasks
+1. **`MatchingDO` Durable Object.** One global instance (or one per region — sharded by geohash prefix). State:
+   - `online_capturers: Map<capturer_id, { lat, lng, last_ping }>`
+   - `open_requests: Map<request_id, { lat, lng, ... }>`
+   - WebSocket connections from online capturers and customers.
+2. **Capturer "go online":**
+   - Frontend opens WebSocket to `wss://api.flickbolt.com/ws/capturer` (Worker proxies to `MatchingDO`).
+   - Sends location pings every 30s.
+   - DO indexes them by geohash for fast nearest-neighbor lookup.
+3. **Request dispatch:**
+   - When a request is created, API hands it to `MatchingDO`.
+   - DO finds capturers within request's max distance, ranked by rating + distance + price-fit.
+   - DO pushes the request offer to top N capturers via WebSocket.
+   - Capturers see a card with "Accept" / "Decline" / "Counter-offer" (if bid mode).
+4. **Acceptance:**
+   - First valid acceptance wins (DO arbitrates).
+   - Request status → `assigned`, `assigned_capturer_id` set.
+   - Customer notified via their open WebSocket.
+   - Other capturers' offer cards withdraw.
+5. **Timeout.** If no one accepts in N minutes, request returns to pool with widened radius or escalated price.
+
+**Acceptance:** With one customer + one online capturer in different browsers, request creation triggers an offer in the capturer's UI within 2 seconds; accepting transitions both UIs to "Job in progress."
+
+---
+
+## Phase 7 — Capture & Live Streaming (Cloudflare Stream)
+
+**Goal:** Capturer films and uploads (or live-streams), customer watches/receives.
+
+### Tasks
+1. **Cloudflare Stream setup:**
+   - For **live**: Worker calls `POST https://api.cloudflare.com/client/v4/accounts/:account/stream/live_inputs` to create a live input → returns RTMPS URL + key, plus a playback URL. Save `stream_uid` on the request/video record.
+   - For **VOD upload**: use Stream's **Direct Creator Upload** — Worker generates a one-time upload URL, capturer's browser uploads directly to Cloudflare (skips Worker, no egress cost).
+2. **Capture UI** (`/capture/job/:id/`):
+   - Two modes:
+     - **Record-and-upload** (simpler MVP): use `MediaRecorder` API to record from `getUserMedia({video, audio})`, then upload the resulting blob to Stream via Direct Creator Upload.
+     - **Live broadcast**: WebRTC to Cloudflare Stream (Stream supports WHIP — WebRTC-HTTP Ingestion Protocol). Browser pushes media directly to Stream's WHIP endpoint.
+   - GPS capture: read `navigator.geolocation` continuously during recording; store the trace; submit with the upload as proof of presence.
+3. **Endpoints:**
+   - `POST /requests/:id/start-capture` → returns Stream live input or VOD upload URL.
+   - `POST /requests/:id/finish-capture` → marks `delivered`, attaches `stream_uid`, stores GPS trace.
+4. **Anti-fraud checks** (Worker-side, before marking delivered):
+   - Recorded GPS midpoint within X meters of requested location.
+   - Recording duration ≥ requested duration.
+   - File metadata sanity (recent timestamp).
+   - For high-value jobs (>$50), require live mode only (no upload).
+
+**Acceptance:** Capturer records on phone, hits "deliver"; customer sees the video play back from Cloudflare Stream within 30s.
+
+---
+
+## Phase 8 — Delivery, Acceptance & Payouts
+
+**Goal:** Customer reviews delivery, accepts or disputes; payment captured; capturer paid.
+
+### Tasks
+1. **Delivery review UI** — customer sees video player + "Accept" / "Request revision" / "Dispute".
+2. **Endpoints:**
+   - `POST /requests/:id/accept` — captures the Stripe PaymentIntent, splits funds (platform fee + capturer share), schedules payout via Stripe Connect transfer.
+   - `POST /requests/:id/revise` — sends back to capturer with feedback (limit revisions to 1–2).
+   - `POST /requests/:id/dispute` — locks funds, opens admin review.
+3. **Auto-accept timeout.** If customer doesn't act within 48 hours, auto-accept (configurable; warn the customer in the email).
+4. **Payouts.** Stripe Connect handles bank transfer. Capturer dashboard shows pending vs paid earnings.
+5. **Refunds & disputes.** Admin tool (Phase 12): Worker route protected by `role=admin` to reverse PaymentIntents and reclaim transfers.
+
+**Acceptance:** End-to-end loop: customer requests → capturer fulfills → customer accepts → funds settle, payout shows up in Stripe Connect dashboard.
+
+---
+
+## Phase 9 — Twitch-Style Live Mode
+
+**Goal:** Capturers can broadcast publicly without a paid request, viewers discover/watch/tip/subscribe.
+
+### Tasks
+1. **`/live/` discovery feed.** Grid of currently-live capturers — pulls `GET /live/active` (Worker queries D1 for `videos.is_live = true`, joined with capturer profile).
+2. **`/live/:handle/` watch page.**
+   - Cloudflare Stream HLS player (`<iframe>` from Stream, or `hls.js` for full control).
+   - Live chat: `LiveChannelDO` Durable Object per active broadcast — WebSocket fan-out, message buffer, slow-mode.
+   - Tip button → Stripe PaymentIntent → applied as "tip" transaction → notification appears as on-stream alert (DO pushes event to overlay).
+   - Subscribe button → Stripe Subscription → tiers ("Supporter $4.99", "Premium $9.99"); benefits are emoji, badge, ad-free, archive access.
+3. **Capturer go-live flow.** From `/capture/`, button "Go Live (Public)" — creates a Stream live input, broadcasts via WHIP, exposes the watch URL.
+4. **Geofenced live.** Capturer can opt into "ambient live" — auto-stream when entering chosen zones (Times Square, scenic overlooks). Viewer can browse a map of ambient broadcasts.
+5. **Recording & VOD.** Cloudflare Stream auto-records live broadcasts. Capturer can publish past streams to their profile page.
+
+**Acceptance:** Two browsers — one capturer goes live, one viewer opens `/live/handle/`, sees the stream with <5s latency, tips $1, capturer's overlay shows the alert, balance updates.
+
+---
+
+## Phase 10 — Reviews, Trust & Safety
+
+**Goal:** Both sides build reputation; abuse can be reported and acted on.
+
+### Tasks
+1. **Two-way ratings.** After delivery, both customer and capturer rate (1–5 + optional comment). Average shown on profile.
+2. **Reporting.** "Report" button on every video, profile, and chat message. Creates a `reports` row, queued for admin review.
+3. **Moderation queue.** Admin route `/admin/reports` — list, view evidence, take action (warn, suspend, ban, refund).
+4. **Automated checks:**
+   - Cloudflare Stream supports auto-thumbnail extraction; route a sample of frames through an image-moderation service (AWS Rekognition, Hive, or Cloudflare AI's image-classification model) for nudity/violence flags before publishing.
+   - Chat profanity filter (small word list + heuristics; consider Perspective API for serious moderation).
+5. **Capturer code of conduct enforcement.** Auto-suspend on N strikes.
+
+**Acceptance:** A reported video lands in admin queue; admin can suspend the capturer; suspended capturers can't go online.
+
+---
+
+## Phase 11 — Notifications, Email & Polish
+
+**Goal:** Users know what's happening without staring at the app.
+
+### Tasks
+1. **Web Push.** Service Worker on the static site (yes, this works on GitHub Pages — `service-worker.js` at root). Subscribe via VAPID; store subscription on user record; Worker sends pushes for: incoming offers (capturers), assignment confirmation (customers), delivery ready, tips/subs.
+2. **Transactional email** via Resend or Cloudflare Email Workers: signup verification, magic link, delivery confirmation, weekly earnings summary, dispute alerts.
+3. **Cloudflare Queue** for email/push fan-out (don't block API responses on email send).
+4. **Cloudflare Web Analytics** snippet on the site.
+5. **Sentry** (or Workers `console.log` aggregated via Logpush) for errors.
+
+---
+
+## Phase 12 — Launch Checklist
+
+- [ ] Legal: Terms of Service, Privacy Policy, Capturer Agreement, Filming Rules — written by an actual lawyer, not by an LLM. This is the most important line item on this page.
+- [ ] Two-party consent state list inside the request flow ("filming in this state may require consent of recorded parties; FlickBolt is not liable").
+- [ ] DMCA takedown process and contact.
+- [ ] Stripe Restricted Businesses review — confirm marketplace model is acceptable for your use cases.
+- [ ] Capturer background check provider (Checkr or similar) for paid tier above $X.
+- [ ] Insurance — at minimum, general liability; ideally a rider for capturer activities.
+- [ ] Rate limiting on all Worker endpoints (KV-based counter or Cloudflare's built-in).
+- [ ] Turnstile on signup, login, request creation.
+- [ ] Backup: nightly D1 export to R2.
+- [ ] Soft-launch in one city. Recruit 10 capturers manually. Watch the first 50 transactions personally.
+
+---
+
+## Open Questions To Decide Before Building
+
+1. **Pricing model:** fixed tiers, capturer-set rates, or live auction? (Affects Phases 5 and 6 heavily.)
+2. **Mobile strategy:** browser-only (this spec) vs. wrap in Capacitor for an app store presence later. The browser path is faster to ship; an app gives you better camera/GPS access and push notifications.
+3. **Scope of "live."** Is the Twitch side a v1 feature or a v2 feature? It's significant work — consider shipping the Uber side first and adding live in a second release.
+4. **Geographic launch.** One city or open everywhere? One city radically de-risks the matching algorithm and the legal review.
+5. **Bystander privacy default.** Auto-blur faces (Cloudflare AI face-detection + canvas redaction) by default? This is an opinionated trust-and-safety stance worth taking early.
+
+---
+
+## Suggested Execution Order for Replit
+
+If you want to feed this to Replit one chunk at a time, use this cadence:
+
+1. **Sprint 1 (Phases 0–2):** "Stand up the empty system." Repo, deploys, schema, health endpoint.
+2. **Sprint 2 (Phases 3–4):** "Users exist." Auth + capturer onboarding.
+3. **Sprint 3 (Phase 5):** "Money moves." Customer request + Stripe escrow, no matching yet (manual assignment is fine).
+4. **Sprint 4 (Phases 6–8):** "The product works." Real-time matching + capture + payout. End-to-end.
+5. **Sprint 5 (Phase 10–11):** "Trust and notifications." Ratings, reports, push, email.
+6. **Sprint 6 (Phase 9):** "Live mode." Twitch features.
+7. **Sprint 7 (Phase 12):** "Launch."
+
+Each sprint should produce a demo-able product. Don't let any sprint stretch past 2 weeks before showing it to a real potential capturer or customer.
