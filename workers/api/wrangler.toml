@@ -17,12 +17,12 @@ ENVIRONMENT = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "flickbolt_db"
-database_id = "REPLACE_ME_AFTER_wrangler_d1_create"
+database_id = "a726d6ef-6705-40aa-bac3-a8b59ffc6eda"
 migrations_dir = "../migrations"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_ME_AFTER_wrangler_kv_namespace_create"
+id = "8efadccda4eb485eb325abb211737d3f"
 
 [[r2_buckets]]
 binding = "MEDIA"

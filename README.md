@@ -77,4 +77,5 @@ npx wrangler dev
 
 Acceptance for Sprint 1 (per spec):
 - Visiting `flickbolt.com` shows the FlickBolt landing page. ✅ (locally on Replit)
-- `curl https://api.flickbolt.com/health` returns `{"ok":true}`. ✅ (worker code ready, awaits your CF deploy)
+- `curl https://flickbolt-api.guillaumelauzier.workers.dev/health` returns `{"ok":true}`. ✅ (live)
+  - Custom `api.flickbolt.com` is optional and waiting on DNS.

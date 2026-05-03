@@ -23,7 +23,7 @@ async function issueTokens(env: Env, userId: string, role: UserRole) {
   await env.KV.put(`rt:${refreshToken}`, JSON.stringify({ userId, role }), {
     expirationTtl: REFRESH_TTL,
   });
-  return { accessToken, refreshToken };
+  return { access_token: accessToken, refresh_token: refreshToken, token_type: "Bearer", expires_in: ACCESS_TTL };
 }
 
 auth.post("/signup", async (c) => {
@@ -62,7 +62,7 @@ auth.post("/signup", async (c) => {
     .run();
 
   const tokens = await issueTokens(c.env, id, role);
-  return c.json(tokens, 201);
+  return c.json({ ...tokens, user: { id, email: body.email.toLowerCase(), role, display_name: body.display_name, handle } }, 201);
 });
 
 auth.post("/login", async (c) => {

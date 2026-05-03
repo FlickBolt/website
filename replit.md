@@ -85,10 +85,28 @@ deploy to Cloudflare via the GitHub Action.
   CORS, error handler, JWT auth (signup/login/refresh/logout/me)
 - ⏳ Phases 3–12 — see `attached_assets/Pasted--FlickBolt-Build-Specification-...txt`
 
-## What requires user action before Sprint 2
+## Cloudflare deployment (live)
+Worker is **deployed and serving traffic**:
+- API URL: `https://flickbolt-api.guillaumelauzier.workers.dev`
+- D1 `flickbolt_db` uuid `a726d6ef-6705-40aa-bac3-a8b59ffc6eda` — schema `0001_init.sql` applied (10 tables)
+- KV `flickbolt-sessions` id `8efadccda4eb485eb325abb211737d3f` (refresh tokens)
+- R2 `flickbolt-media` (empty)
+- `JWT_SECRET` set as worker secret (48 random bytes, base64url)
+
+End-to-end smoke verified: `/health`, `/version`, `/auth/signup`, `/me`, `/auth/login`,
+`/auth/refresh` (rotates), `/auth/logout`, plus negative cases (bad password → 401,
+duplicate email → 409, missing bearer → 401).
+
+### Known limitation
+Refresh-token revocation relies on KV deletion. KV is **eventually consistent**
+(up to ~60s global propagation), so a token rotated seconds ago may still be
+accepted briefly at edges that haven't seen the delete. For Sprint 3+ swap
+refresh-token storage to D1 (strongly consistent) if exact-instant revocation
+is required.
+
+## What still requires user action before Sprint 2
 - Create GitHub repo `flickbolt`, push, enable Pages (source: GitHub Actions)
-- `wrangler d1 create flickbolt_db` → paste id into `workers/api/wrangler.toml`
-- `wrangler kv:namespace create flickbolt-sessions` → paste id into wrangler.toml
-- `wrangler r2 bucket create flickbolt-media`
-- `wrangler secret put JWT_SECRET` (long random string)
 - Add GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+  (so `workers-deploy.yml` can re-deploy on push to `workers/**`)
+- (Optional) Point `api.flickbolt.com` DNS at Cloudflare and uncomment the
+  `routes` block in `workers/api/wrangler.toml`
