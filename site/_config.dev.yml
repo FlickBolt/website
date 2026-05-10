@@ -1,0 +1,4 @@
+# Development overrides for the Replit preview.
+# Built with: bundle exec jekyll build --config _config.yml,_config.dev.yml
+# In dev, the API is served by the same Node server on the same origin (port 5000).
+api_base: ""

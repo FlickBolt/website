@@ -9,7 +9,7 @@ compatibility_flags = ["nodejs_compat"]
 # ]
 
 [vars]
-ALLOWED_ORIGINS = "https://flickbolt.com,http://localhost:4000"
+ALLOWED_ORIGINS = "https://flickbolt.com,https://www.flickbolt.com,http://localhost:4000"
 ENVIRONMENT = "production"
 
 # --- Bindings ---

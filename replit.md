@@ -63,11 +63,24 @@ flickbolt/
 ## Running on Replit
 Workflow `Start application` runs:
 ```
-cd site && bundle exec jekyll serve --host 0.0.0.0 --port 5000 --livereload
+cd site && bundle install --quiet && bundle exec jekyll build \
+  --config _config.yml,_config.dev.yml --destination ../_site \
+  && cd .. && node server/src/index.js
 ```
-That serves the Jekyll site on port 5000 (webview). The Workers API isn't run inside
-Replit — develop locally with `cd workers/api && npx wrangler dev` (port 8787) or
-deploy to Cloudflare via the GitHub Action.
+That builds the Jekyll site with the dev config override (which sets `api_base` to
+empty so calls hit the same origin), then starts a Node/Express server on port 5000
+that serves both the static site **and** a local clone of the Workers API
+(signup / login / refresh / logout / me). This lets you exercise auth end-to-end in
+the Replit preview without touching Cloudflare.
+
+The Node server at `server/` uses SQLite (file: `data/flickbolt.db`) in place of D1
+and an in-memory map in place of KV. The schema comes from
+`workers/migrations/0001_init.sql`.
+
+## Deploying to production (flickbolt.com)
+See `DEPLOYMENT.md`. Architecture:
+- Site → GitHub Pages on `flickbolt.com` via `.github/workflows/jekyll.yml`
+- API → Cloudflare Workers via `.github/workflows/workers-deploy.yml`
 
 ## Deployment
 - **Site**: GitHub Pages via `.github/workflows/jekyll.yml` (path-filtered to `site/**`).

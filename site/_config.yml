@@ -6,7 +6,8 @@ baseurl: ""
 permalink: /:slug/
 
 # API endpoint used by all client JS. Override per environment.
-api_base: ""
+# Production: Cloudflare Worker. Replit dev preview overrides via _config.dev.yml.
+api_base: "https://flickbolt-api.guillaumelauzier.workers.dev"
 
 # Build settings
 markdown: kramdown
