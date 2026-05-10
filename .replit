@@ -27,12 +27,12 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd site && bundle exec jekyll serve --host 0.0.0.0 --port 5000 --livereload"
+args = "cd site && bundle install --quiet && bundle exec jekyll build --destination ../_site && cd .. && node server/src/index.js"
 waitForPort = 5000
 
 [[ports]]
 localPort = 5000
-externalPort = 5000
+externalPort = 80
 
 [deployment]
 deploymentTarget = "static"

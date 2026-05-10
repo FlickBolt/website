@@ -6,7 +6,7 @@ baseurl: ""
 permalink: /:slug/
 
 # API endpoint used by all client JS. Override per environment.
-api_base: "https://api.flickbolt.com"
+api_base: ""
 
 # Build settings
 markdown: kramdown
