@@ -33,15 +33,27 @@ flickbolt/
 │   ├── live-channel-do/   # Durable Object for live chat (Phase 9)
 │   ├── shared/            # cross-worker helpers
 │   └── migrations/        # D1 SQL migrations
-└── .github/workflows/     # CI: jekyll.yml + workers-deploy.yml
+└── .github/workflows/     # CI: pages.yml (site → GitHub Pages)
 ```
+
+> **Note:** `flickbolt.com` is served by `.github/workflows/pages.yml`, which
+> builds `site/` and publishes it. If that workflow is missing or Pages is set to
+> "Deploy from a branch", GitHub builds the repository root instead and the
+> domain serves this README rather than the platform UI.
 
 ## Local development
 
-### Site (Jekyll)
+### Site (Jekyll + Tailwind)
+
+Tailwind is compiled at build time — there is no CDN script at runtime. The
+source lives in `site/_css/app.css`; the compiled output `site/assets/css/app.css`
+is generated and gitignored, so the CSS step must run before Jekyll.
+
 ```bash
 cd site
 bundle install
+npm install
+npm run build:css        # or: npm run watch:css, in a second terminal
 bundle exec jekyll serve --host 0.0.0.0 --port 5000 --livereload
 ```
 
@@ -64,7 +76,9 @@ npx wrangler dev
 ## Things you (the human) still have to do for Sprint 1
 
 1. Create a GitHub repo named `flickbolt` and push.
-2. Enable GitHub Pages → source: GitHub Actions.
+2. Enable GitHub Pages → source: GitHub Actions. (`pages.yml` sets this itself via
+   `actions/configure-pages` with `enablement: true`; check Settings → Pages if the
+   first run reports it could not.)
 3. Buy a domain (`flickbolt.com`) — optional but recommended for cookie-based auth.
 4. In Cloudflare:
    - Run `wrangler login`
@@ -72,10 +86,10 @@ npx wrangler dev
    - `wrangler kv:namespace create flickbolt-sessions` → paste `id` into wrangler.toml
    - `wrangler r2 bucket create flickbolt-media`
    - `wrangler secret put JWT_SECRET` (use a long random string)
-5. Add GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
-6. Push to `main`. The two workflows deploy independently.
+5. Push to `main`. `pages.yml` rebuilds and republishes flickbolt.com; the Worker
+   is deployed separately with `npx wrangler deploy` from `workers/api/`.
 
 Acceptance for Sprint 1 (per spec):
-- Visiting `flickbolt.com` shows the FlickBolt landing page. ✅ (locally on Replit)
+- Visiting `flickbolt.com` shows the FlickBolt landing page. ✅ (via `pages.yml`)
 - `curl https://flickbolt-api.guillaumelauzier.workers.dev/health` returns `{"ok":true}`. ✅ (live)
   - Custom `api.flickbolt.com` is optional and waiting on DNS.

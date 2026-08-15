@@ -70,10 +70,24 @@ If you skip this step, the site will call the API at the existing `*.workers.dev
 
 | You push changes to…           | GitHub Action triggers              | Result                                  |
 |--------------------------------|-------------------------------------|-----------------------------------------|
-| `site/**` or `CNAME`           | `.github/workflows/jekyll.yml`      | Rebuilds & redeploys flickbolt.com      |
-| `workers/**`                   | `.github/workflows/workers-deploy.yml` | Applies D1 migrations + redeploys Worker |
+| `site/**` or `CNAME`           | `.github/workflows/pages.yml`       | Rebuilds & redeploys flickbolt.com      |
+| `workers/**`                   | *(not yet automated — deploy with `npx wrangler deploy` from `workers/api/`)* | — |
 
-Both run on push to `main` and can also be triggered manually from the Actions tab.
+`pages.yml` runs on push to `main` and can also be triggered manually from the
+Actions tab ("Deploy site to GitHub Pages" → Run workflow).
+
+### What `pages.yml` does
+
+1. `actions/configure-pages` with `enablement: true` — points Pages at the
+   Actions build. **This is the step that stops flickbolt.com serving the
+   README:** with no workflow present, Pages builds the repository root, finds
+   no `index.html`, and falls back to rendering `README.md` with a default theme.
+2. `npm ci && npm run build:css` — compiles Tailwind from `site/_css/app.css`
+   into `site/assets/css/app.css`. The site no longer loads
+   `cdn.tailwindcss.com` at runtime, which is explicitly not production-safe.
+3. `bundle exec jekyll build` with `JEKYLL_ENV=production` → `_site/`.
+4. `actions/deploy-pages` publishes `_site/`. `site/CNAME` rides along in the
+   build output, so the custom domain survives every deploy.
 
 ---
 
@@ -91,7 +105,8 @@ If you get a 404 or "deployment not found", the worker hasn't been redeployed si
 ## Local development on Replit
 
 The Replit preview keeps working independently:
-- Jekyll is built with `_config.yml` + `_config.dev.yml` (the dev override sets `api_base` to empty)
+- Tailwind is compiled first (`npm ci && npm run build:css`), then Jekyll is built
+  with `_config.yml` + `_config.dev.yml` (the dev override sets `api_base` to empty)
 - The Node API server in `server/` mirrors the Worker's auth routes for local testing
 - This means signup/login work in the Replit preview without ever calling Cloudflare
 

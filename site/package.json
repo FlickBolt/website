@@ -1,0 +1,12 @@
+{
+  "name": "flickbolt-site",
+  "private": true,
+  "description": "Build-time Tailwind compilation for the FlickBolt Jekyll site.",
+  "scripts": {
+    "build:css": "tailwindcss -i ./_css/app.css -o ./assets/css/app.css --minify",
+    "watch:css": "tailwindcss -i ./_css/app.css -o ./assets/css/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}
