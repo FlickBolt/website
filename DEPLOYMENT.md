@@ -118,6 +118,15 @@ a red X on every push.
 > database automatically. That is fine for additive changes, but a destructive
 > migration will land the moment it reaches `main`. Review migration files with
 > the same care as a production release.
+>
+> **Write migrations idempotently** (`CREATE TABLE IF NOT EXISTS`, and so on).
+> `0001_init.sql` was originally applied to production out-of-band, so D1's
+> migration ledger never recorded it — the first automated run tried to replay
+> 0001 and failed with `table users already exists`, which would have blocked
+> every future migration. Idempotent statements let D1 reconcile its ledger with
+> a database that is already in the right shape. Because migrations run *before*
+> `wrangler deploy`, a failure here aborts the release rather than shipping code
+> against a schema that did not migrate.
 
 ---
 
