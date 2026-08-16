@@ -38,7 +38,7 @@ jobs:
       run:
         working-directory: site
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # enablement:true flips the Pages source to "GitHub Actions" so the
       # legacy branch-root build (the one serving README.md) stops winning.
@@ -54,7 +54,7 @@ jobs:
           bundler-cache: true
           working-directory: site
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
 
