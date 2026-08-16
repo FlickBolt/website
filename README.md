@@ -33,7 +33,7 @@ flickbolt/
 │   ├── live-channel-do/   # Durable Object for live chat (Phase 9)
 │   ├── shared/            # cross-worker helpers
 │   └── migrations/        # D1 SQL migrations
-└── .github/workflows/     # CI: pages.yml (site → GitHub Pages)
+└── .github/workflows/     # CI: pages.yml + workers-deploy.yml
 ```
 
 > **Note:** `flickbolt.com` is served by `.github/workflows/pages.yml`, which
@@ -86,8 +86,10 @@ npx wrangler dev
    - `wrangler kv:namespace create flickbolt-sessions` → paste `id` into wrangler.toml
    - `wrangler r2 bucket create flickbolt-media`
    - `wrangler secret put JWT_SECRET` (use a long random string)
-5. Push to `main`. `pages.yml` rebuilds and republishes flickbolt.com; the Worker
-   is deployed separately with `npx wrangler deploy` from `workers/api/`.
+5. Add GitHub Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+   so the Worker can deploy from CI.
+6. Push to `main`. `pages.yml` republishes flickbolt.com; `workers-deploy.yml`
+   migrates D1 and redeploys the Worker.
 
 Acceptance for Sprint 1 (per spec):
 - Visiting `flickbolt.com` shows the FlickBolt landing page. ✅ (via `pages.yml`)

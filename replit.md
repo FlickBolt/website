@@ -49,7 +49,8 @@ flickbolt/
 │   ├── migrations/0001_init.sql  # D1 schema
 │   └── scripts/migrate.sh
 └── .github/workflows/
-    └── pages.yml          # builds site/ (Tailwind + Jekyll) → GitHub Pages
+    ├── pages.yml          # builds site/ (Tailwind + Jekyll) → GitHub Pages
+    └── workers-deploy.yml # typecheck + D1 migrate + wrangler deploy
 ```
 
 ## Tech Stack
@@ -84,15 +85,18 @@ and an in-memory map in place of KV. The schema comes from
 ## Deploying to production (flickbolt.com)
 See `DEPLOYMENT.md`. Architecture:
 - Site → GitHub Pages on `flickbolt.com` via `.github/workflows/pages.yml`
-- API → Cloudflare Workers (deployed manually; already live)
+- API → Cloudflare Workers via `.github/workflows/workers-deploy.yml`
 
 ## Deployment
 - **Site**: GitHub Pages via `.github/workflows/pages.yml` (path-filtered to `site/**`).
   Prior to this workflow existing, `.gitignore` excluded `.github/workflows/`, so no
   workflow was ever committed — Pages built the repo root and served `README.md` on
   flickbolt.com instead of the platform UI.
-- **API**: Cloudflare Workers — deployed manually with `npx wrangler deploy` from
-  `workers/api/`. Not yet automated in CI.
+- **API**: Cloudflare Workers via `.github/workflows/workers-deploy.yml`
+  (path-filtered to `workers/**`). PRs typecheck and dry-run build; pushes to
+  `main` apply D1 migrations, deploy, and smoke-test `/health`. Requires repo
+  secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` — without them the
+  deploy job is skipped rather than failed.
 - **Replit publish**: configured as a static deployment that builds Jekyll from `site/`
   and serves `_site/` (so the landing page is reachable at the `*.replit.app` domain
   even before a real CF/Pages setup).
@@ -126,8 +130,7 @@ is required.
 ## What still requires user action before Sprint 2
 - Confirm Settings → Pages source is "GitHub Actions" (`pages.yml` tries to set it
   automatically via `actions/configure-pages`)
-- (Optional) Add GitHub Actions secrets `CLOUDFLARE_API_TOKEN` /
-  `CLOUDFLARE_ACCOUNT_ID` if worker deploys should move from manual `wrangler
-  deploy` into CI
+- Add GitHub Actions secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`
+  so `workers-deploy.yml` can deploy the Worker on push to `workers/**`
 - (Optional) Point `api.flickbolt.com` DNS at Cloudflare and uncomment the
   `routes` block in `workers/api/wrangler.toml`
