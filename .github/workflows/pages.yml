@@ -11,6 +11,13 @@ on:
       - "site/**"
       - "CNAME"
       - ".github/workflows/pages.yml"
+  # Build (but do not publish) on PRs, so a broken site or a broken workflow is
+  # caught in review rather than on the first push to main.
+  pull_request:
+    paths:
+      - "site/**"
+      - "CNAME"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -19,9 +26,10 @@ permissions:
   id-token: write
 
 # Let an in-flight deploy finish rather than cancelling it mid-publish.
+# PR validation runs get their own group so they never queue behind a deploy.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -34,7 +42,9 @@ jobs:
 
       # enablement:true flips the Pages source to "GitHub Actions" so the
       # legacy branch-root build (the one serving README.md) stops winning.
+      # Skipped on PRs — a validation run must not mutate repository settings.
       - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
         with:
           enablement: true
 
@@ -60,13 +70,32 @@ jobs:
           JEKYLL_ENV: production
         run: bundle exec jekyll build --destination ../_site
 
+      # Guards the two ways this deploy has silently regressed before: serving
+      # something other than the platform UI, and depending on the Tailwind CDN.
+      - name: Verify build output
+        working-directory: .
+        run: |
+          set -euo pipefail
+          test -s _site/index.html            || { echo "::error::_site/index.html missing"; exit 1; }
+          test -s _site/assets/css/app.css    || { echo "::error::compiled CSS missing"; exit 1; }
+          grep -q "flickbolt.com" _site/CNAME || { echo "::error::CNAME missing or wrong"; exit 1; }
+          grep -q "FlickBolt" _site/index.html \
+            || { echo "::error::index.html is not the FlickBolt landing page"; exit 1; }
+          if grep -rq "cdn.tailwindcss.com" _site/; then
+            echo "::error::Tailwind CDN reference found in build output"; exit 1
+          fi
+          echo "Built $(find _site -name '*.html' | wc -l) HTML pages."
+
       - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
         with:
           # Paths are resolved from the workspace root, not `defaults.run`.
           path: _site
 
   deploy:
     needs: build
+    # PRs validate the build only; publishing happens on main.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
