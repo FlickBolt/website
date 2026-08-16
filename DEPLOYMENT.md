@@ -71,7 +71,7 @@ If you skip this step, the site will call the API at the existing `*.workers.dev
 | You push changes to…           | GitHub Action triggers              | Result                                  |
 |--------------------------------|-------------------------------------|-----------------------------------------|
 | `site/**` or `CNAME`           | `.github/workflows/pages.yml`       | Rebuilds & redeploys flickbolt.com      |
-| `workers/**`                   | *(not yet automated — deploy with `npx wrangler deploy` from `workers/api/`)* | — |
+| `workers/**`                   | `.github/workflows/workers-deploy.yml` | Applies D1 migrations + redeploys the Worker |
 
 `pages.yml` runs on push to `main` and can also be triggered manually from the
 Actions tab ("Deploy site to GitHub Pages" → Run workflow).
@@ -88,6 +88,36 @@ Actions tab ("Deploy site to GitHub Pages" → Run workflow).
 3. `bundle exec jekyll build` with `JEKYLL_ENV=production` → `_site/`.
 4. `actions/deploy-pages` publishes `_site/`. `site/CNAME` rides along in the
    build output, so the custom domain survives every deploy.
+
+### What `workers-deploy.yml` does
+
+Two jobs. The `check` job runs on **every** push and pull request:
+
+1. `npm ci` + `npm run typecheck` (`tsc --noEmit`).
+2. `wrangler deploy --dry-run` — validates `wrangler.toml` and bundles the
+   Worker **without credentials**, so a broken binding or build surfaces on the
+   PR instead of halfway through a production deploy.
+3. Resolves whether `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` exist
+   (secrets cannot be read from a job-level `if`, so this is passed on as an
+   output).
+
+The `deploy` job runs only on `main`, and only when both secrets are present:
+
+4. `wrangler d1 migrations apply flickbolt_db --remote` — **before** the deploy,
+   so newly released code never meets an old schema. D1 records what it has
+   already applied, so re-running is a no-op.
+5. `wrangler deploy`.
+6. Smoke test: polls `/health` until it returns `{"ok":true}`, up to 5 attempts.
+   A deploy that does not answer is a failed deploy.
+
+If the Cloudflare secrets are **not** set, the deploy job is *skipped*, not
+failed — an unconfigured repo still gets typecheck and build signal rather than
+a red X on every push.
+
+> **Note on migrations:** step 4 applies pending migrations to the production
+> database automatically. That is fine for additive changes, but a destructive
+> migration will land the moment it reaches `main`. Review migration files with
+> the same care as a production release.
 
 ---
 

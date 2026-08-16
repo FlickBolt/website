@@ -1,0 +1,119 @@
+name: Deploy API worker
+
+# Applies D1 migrations and deploys workers/api to Cloudflare.
+# Pull requests typecheck and dry-run build only — nothing reaches production
+# until the change lands on main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/**"
+      - ".github/workflows/workers-deploy.yml"
+  pull_request:
+    paths:
+      - "workers/**"
+      - ".github/workflows/workers-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let two worker deploys race; PR checks get their own group.
+concurrency:
+  group: workers-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/api
+    outputs:
+      deployable: ${{ steps.creds.outputs.deployable }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: workers/api/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Validates wrangler.toml and bundles the worker without credentials, so
+      # config or build breakage surfaces on the PR rather than mid-deploy.
+      - name: Build (dry run)
+        run: npx wrangler deploy --dry-run --outdir=dist
+
+      # secrets can't be read from a job-level `if`, so resolve availability
+      # here and let the deploy job gate on the output.
+      - id: creds
+        name: Check Cloudflare credentials
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_API_TOKEN" ] && [ -n "$CF_ACCOUNT_ID" ]; then
+            echo "deployable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deployable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID are not set — the deploy job will be skipped. Add them in Settings → Secrets and variables → Actions."
+          fi
+
+  deploy:
+    needs: check
+    # Skipped (not failed) when credentials are absent, so an unconfigured repo
+    # still gets green typecheck/build signal instead of a red X on every push.
+    if: github.event_name != 'pull_request' && needs.check.outputs.deployable == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/api
+    environment:
+      name: workers-production
+      url: https://flickbolt-api.guillaumelauzier.workers.dev
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: workers/api/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      # Migrations first, so newly deployed code never meets an old schema.
+      # D1 records what it has applied, making a re-run a no-op.
+      - name: Apply D1 migrations
+        run: npx wrangler d1 migrations apply flickbolt_db --remote
+
+      - name: Deploy worker
+        run: npx wrangler deploy
+
+      # A deploy that returns 200 on /health is the only proof that matters.
+      # Retries cover edge propagation right after a release.
+      - name: Smoke test /health
+        run: |
+          set -uo pipefail
+          url="https://flickbolt-api.guillaumelauzier.workers.dev/health"
+          for attempt in 1 2 3 4 5; do
+            body=$(curl -fsS --max-time 10 "$url" || true)
+            if [ "$body" = '{"ok":true}' ]; then
+              echo "Health check passed on attempt $attempt: $body"
+              exit 0
+            fi
+            echo "Attempt $attempt: unexpected response '${body:-<none>}' — retrying in 10s"
+            sleep 10
+          done
+          echo "::error::/health did not return {\"ok\":true} after 5 attempts"
+          exit 1
