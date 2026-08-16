@@ -15,9 +15,15 @@ workers/**/.wrangler/
 workers/**/dist/
 workers/**/.dev.vars
 
+# Generated CSS (built from site/_css/app.css by `npm run build:css`)
+site/assets/css/app.css
+
 # OS / editors
 .DS_Store
 *.log
 .env
 .env.local
-.github/workflows/
+
+# npm lockfile is intentionally not tracked: tailwindcss is pinned to an
+# exact version in site/package.json and is the only dependency.
+site/package-lock.json

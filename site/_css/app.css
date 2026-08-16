@@ -1,0 +1,43 @@
+/* Tailwind source for the FlickBolt site.
+   Compiled to assets/css/app.css by `npm run build:css` (see package.json).
+   Never edit assets/css/app.css directly — it is generated and gitignored. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body {
+    @apply bg-zinc-950;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium
+           border border-transparent cursor-pointer transition-colors;
+  }
+  .btn-primary {
+    @apply bg-amber-400 text-zinc-950 hover:bg-amber-300;
+  }
+  .btn-ghost {
+    @apply border-zinc-800 text-zinc-100 bg-transparent hover:border-zinc-700;
+  }
+
+  .input {
+    @apply block w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100
+           placeholder:text-zinc-500 focus:outline-none focus:border-amber-400;
+  }
+
+  .label {
+    @apply block text-xs uppercase tracking-wider text-zinc-400 mb-1;
+  }
+
+  .card {
+    @apply bg-zinc-900/60 border border-zinc-800 rounded-xl p-5;
+  }
+}

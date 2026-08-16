@@ -18,8 +18,11 @@ flickbolt/
 │   ├── _layouts/
 │   ├── _includes/
 │   ├── _data/
+│   ├── _css/app.css       # Tailwind source (compiled by npm run build:css)
+│   ├── tailwind.config.js
+│   ├── package.json
 │   ├── assets/
-│   │   ├── css/app.css
+│   │   ├── css/app.css    # GENERATED — gitignored, do not edit
 │   │   └── js/            # api.js, auth.js, state.js, pages/*
 │   ├── index.md           # landing page
 │   ├── request.md         # customer request flow
@@ -46,12 +49,11 @@ flickbolt/
 │   ├── migrations/0001_init.sql  # D1 schema
 │   └── scripts/migrate.sh
 └── .github/workflows/
-    ├── jekyll.yml         # builds + deploys site/ to GitHub Pages
-    └── workers-deploy.yml # runs wrangler d1 migrate + wrangler deploy on workers/
+    └── pages.yml          # builds site/ (Tailwind + Jekyll) → GitHub Pages
 ```
 
 ## Tech Stack
-- **Frontend**: Jekyll 4.3, vanilla JS, Tailwind via CDN (development)
+- **Frontend**: Jekyll 4.3, vanilla JS, Tailwind compiled at build time
 - **API**: Cloudflare Workers + Hono router + bcryptjs + JWT (HS256)
 - **Database**: Cloudflare D1 (SQLite), schema in `workers/migrations/0001_init.sql`
 - **Sessions**: Cloudflare KV (refresh tokens)
@@ -63,11 +65,13 @@ flickbolt/
 ## Running on Replit
 Workflow `Start application` runs:
 ```
-cd site && bundle install --quiet && bundle exec jekyll build \
+cd site && bundle install --quiet && npm install --no-audit --no-fund \
+  && npm run build:css && bundle exec jekyll build \
   --config _config.yml,_config.dev.yml --destination ../_site \
   && cd .. && node server/src/index.js
 ```
-That builds the Jekyll site with the dev config override (which sets `api_base` to
+That compiles Tailwind (`site/_css/app.css` → `site/assets/css/app.css`), builds the
+Jekyll site with the dev config override (which sets `api_base` to
 empty so calls hit the same origin), then starts a Node/Express server on port 5000
 that serves both the static site **and** a local clone of the Workers API
 (signup / login / refresh / logout / me). This lets you exercise auth end-to-end in
@@ -79,14 +83,16 @@ and an in-memory map in place of KV. The schema comes from
 
 ## Deploying to production (flickbolt.com)
 See `DEPLOYMENT.md`. Architecture:
-- Site → GitHub Pages on `flickbolt.com` via `.github/workflows/jekyll.yml`
-- API → Cloudflare Workers via `.github/workflows/workers-deploy.yml`
+- Site → GitHub Pages on `flickbolt.com` via `.github/workflows/pages.yml`
+- API → Cloudflare Workers (deployed manually; already live)
 
 ## Deployment
-- **Site**: GitHub Pages via `.github/workflows/jekyll.yml` (path-filtered to `site/**`).
-- **API**: Cloudflare Workers via `.github/workflows/workers-deploy.yml`
-  (path-filtered to `workers/**`). Requires repo secrets `CLOUDFLARE_API_TOKEN` and
-  `CLOUDFLARE_ACCOUNT_ID`.
+- **Site**: GitHub Pages via `.github/workflows/pages.yml` (path-filtered to `site/**`).
+  Prior to this workflow existing, `.gitignore` excluded `.github/workflows/`, so no
+  workflow was ever committed — Pages built the repo root and served `README.md` on
+  flickbolt.com instead of the platform UI.
+- **API**: Cloudflare Workers — deployed manually with `npx wrangler deploy` from
+  `workers/api/`. Not yet automated in CI.
 - **Replit publish**: configured as a static deployment that builds Jekyll from `site/`
   and serves `_site/` (so the landing page is reachable at the `*.replit.app` domain
   even before a real CF/Pages setup).
@@ -118,8 +124,10 @@ refresh-token storage to D1 (strongly consistent) if exact-instant revocation
 is required.
 
 ## What still requires user action before Sprint 2
-- Create GitHub repo `flickbolt`, push, enable Pages (source: GitHub Actions)
-- Add GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
-  (so `workers-deploy.yml` can re-deploy on push to `workers/**`)
+- Confirm Settings → Pages source is "GitHub Actions" (`pages.yml` tries to set it
+  automatically via `actions/configure-pages`)
+- (Optional) Add GitHub Actions secrets `CLOUDFLARE_API_TOKEN` /
+  `CLOUDFLARE_ACCOUNT_ID` if worker deploys should move from manual `wrangler
+  deploy` into CI
 - (Optional) Point `api.flickbolt.com` DNS at Cloudflare and uncomment the
   `routes` block in `workers/api/wrangler.toml`
